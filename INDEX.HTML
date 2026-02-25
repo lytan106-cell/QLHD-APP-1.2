@@ -4,6 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Quản lý hóa đơn</title>
+    <script>
+        try {
+            const desc = Object.getOwnPropertyDescriptor(window, 'fetch');
+            if (desc && !desc.set && desc.configurable) {
+                const originalFetch = window.fetch;
+                Object.defineProperty(window, 'fetch', {
+                    get: function() { return originalFetch; },
+                    set: function(val) { console.warn('Ignored attempt to set window.fetch'); },
+                    configurable: true
+                });
+            }
+        } catch (e) {}
+    </script>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Roboto', sans-serif; -webkit-tap-highlight-color: transparent; }
@@ -162,10 +175,10 @@
             loginBtn.addEventListener('click', () => {
                 loginScreen.style.display = 'none';
                 mainScreen.style.display = 'flex';
-                fetchData();
+                loadData();
             });
 
-            async function fetchData() {
+            async function loadData() {
                 loading.style.display = 'block';
                 errorMsg.style.display = 'none';
                 emptyMsg.style.display = 'none';
@@ -173,7 +186,7 @@
                 pagination.style.display = 'none';
                 
                 try {
-                    const response = await window.fetch(API_URL);
+                    const response = await fetch(API_URL);
                     if (!response.ok) {
                         if (response.status === 401 || response.status === 403) {
                             throw new Error('Lỗi xác thực hoặc không có quyền truy cập (401/403). Kiểm tra lại API Key.');
@@ -310,7 +323,8 @@
             shareBtn.addEventListener('click', async () => {
                 if (selectedFiles.size === 0) return;
                 
-                if (!navigator.canShare || !navigator.share) {
+                if (!navigator.share) {
+                    console.log('Web Share API not supported, fallback to download');
                     downloadBtn.click();
                     return;
                 }
@@ -322,22 +336,30 @@
                         const fileObj = allFiles.find(f => f.id === id);
                         if (!fileObj) continue;
                         
+                        console.log(`Fetching file: ${fileObj.name}`);
                         const url = `https://www.googleapis.com/drive/v3/files/${id}?alt=media&key=${API_KEY}`;
-                        const res = await window.fetch(url);
-                        if (!res.ok) throw new Error('Không thể tải file');
+                        const res = await fetch(url);
+                        if (!res.ok) throw new Error(`Không thể tải file: ${fileObj.name}`);
                         const blob = await res.blob();
                         const file = new File([blob], fileObj.name, { type: 'application/pdf' });
                         filesArray.push(file);
                     }
                     
-                    if (navigator.canShare({ files: filesArray })) {
-                        await navigator.share({ files: filesArray });
-                    } else {
-                        downloadBtn.click();
+                    if (filesArray.length === 0) {
+                        console.log('No files to share');
+                        hideOverlay();
+                        return;
                     }
+
+                    console.log('Ready to share files:', filesArray);
+                    await navigator.share({
+                        files: filesArray
+                    });
+                    console.log('Share successful');
                 } catch (err) {
-                    console.error(err);
+                    console.error('Share error:', err);
                     if (err.name !== 'AbortError') {
+                        console.log('Fallback to download due to error');
                         downloadBtn.click();
                     }
                 } finally {
