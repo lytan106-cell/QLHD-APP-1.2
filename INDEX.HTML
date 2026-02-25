@@ -17,6 +17,7 @@
             }
         } catch (e) {}
     </script>
+    <script src="https://unpkg.com/pdf-lib/dist/pdf-lib.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Roboto', sans-serif; -webkit-tap-highlight-color: transparent; }
@@ -323,50 +324,83 @@
             shareBtn.addEventListener('click', async () => {
                 if (selectedFiles.size === 0) return;
                 
-                if (!navigator.share) {
-                    console.log('Web Share API not supported, fallback to download');
-                    downloadBtn.click();
-                    return;
-                }
+                const isMultiple = selectedFiles.size > 1;
+                showOverlay(isMultiple ? 'Đang gộp file...' : 'Đang chuẩn bị file...');
                 
-                showOverlay('Đang chuẩn bị file...');
+                let fileToShare = null;
                 try {
-                    const filesArray = [];
-                    for (const id of selectedFiles) {
+                    if (isMultiple) {
+                        const { PDFDocument } = PDFLib;
+                        const mergedPdf = await PDFDocument.create();
+                        
+                        for (const id of selectedFiles) {
+                            const fileObj = allFiles.find(f => f.id === id);
+                            if (!fileObj) continue;
+                            
+                            console.log(`Fetching file: ${fileObj.name}`);
+                            const url = `https://www.googleapis.com/drive/v3/files/${id}?alt=media&key=${API_KEY}`;
+                            const res = await fetch(url);
+                            if (!res.ok) throw new Error(`Không thể tải file: ${fileObj.name}`);
+                            const arrayBuffer = await res.arrayBuffer();
+                            
+                            const pdfDoc = await PDFDocument.load(arrayBuffer);
+                            const copiedPages = await mergedPdf.copyPages(pdfDoc, pdfDoc.getPageIndices());
+                            copiedPages.forEach((page) => mergedPdf.addPage(page));
+                        }
+                        
+                        const mergedPdfBytes = await mergedPdf.save();
+                        const blob = new Blob([mergedPdfBytes], { type: 'application/pdf' });
+                        fileToShare = new File([blob], 'hoadon-tong-hop.pdf', { type: 'application/pdf' });
+                    } else {
+                        const id = Array.from(selectedFiles)[0];
                         const fileObj = allFiles.find(f => f.id === id);
-                        if (!fileObj) continue;
+                        if (!fileObj) throw new Error('File not found');
                         
                         console.log(`Fetching file: ${fileObj.name}`);
                         const url = `https://www.googleapis.com/drive/v3/files/${id}?alt=media&key=${API_KEY}`;
                         const res = await fetch(url);
                         if (!res.ok) throw new Error(`Không thể tải file: ${fileObj.name}`);
                         const blob = await res.blob();
-                        const file = new File([blob], fileObj.name, { type: 'application/pdf' });
-                        filesArray.push(file);
+                        fileToShare = new File([blob], fileObj.name, { type: 'application/pdf' });
                     }
-                    
-                    if (filesArray.length === 0) {
-                        console.log('No files to share');
-                        hideOverlay();
+
+                    if (!navigator.share) {
+                        console.log('Web Share API not supported, fallback to download');
+                        downloadSingleFile(fileToShare);
                         return;
                     }
 
-                    console.log('Ready to share files:', filesArray);
+                    console.log('Ready to share file:', fileToShare.name);
                     await navigator.share({
-                        files: filesArray
+                        files: [fileToShare]
                     });
                     console.log('Share successful');
                 } catch (err) {
                     console.error('Share error:', err);
                     if (err.name !== 'AbortError') {
                         console.log('Fallback to download due to error');
-                        downloadBtn.click();
+                        if (fileToShare) {
+                            downloadSingleFile(fileToShare);
+                        } else {
+                            downloadBtn.click();
+                        }
                     }
                 } finally {
                     hideOverlay();
                     resetSelection();
                 }
             });
+
+            function downloadSingleFile(file) {
+                const url = URL.createObjectURL(file);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = file.name;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
 
             function resetSelection() {
                 selectedFiles.clear();
