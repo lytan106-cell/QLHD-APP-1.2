@@ -1,1 +1,613 @@
 
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Quản lý hóa đơn</title>
+    <script>
+        try {
+            const desc = Object.getOwnPropertyDescriptor(window, 'fetch');
+            if (desc && !desc.set && desc.configurable) {
+                const originalFetch = window.fetch;
+                Object.defineProperty(window, 'fetch', {
+                    get: function() { return originalFetch; },
+                    set: function(val) { console.warn('Ignored attempt to set window.fetch'); },
+                    configurable: true
+                });
+            }
+        } catch (e) {}
+    </script>
+    <script src="https://unpkg.com/pdf-lib/dist/pdf-lib.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Roboto', sans-serif; -webkit-tap-highlight-color: transparent; }
+        body { background: #f0f2f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        #app { width: 100%; max-width: 430px; height: 100vh; background: #fff; position: relative; display: flex; flex-direction: column; overflow: hidden; }
+        @media (min-width: 431px) { #app { height: 90vh; max-height: 932px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); } }
+        
+        /* Login */
+        #login { padding: 40px 24px; display: flex; flex-direction: column; justify-content: center; height: 100%; }
+        #login h2 { text-align: center; margin-bottom: 30px; color: #111827; font-size: 26px; }
+        .input-group { margin-bottom: 20px; }
+        .input-group label { display: block; margin-bottom: 8px; font-size: 14px; color: #374151; font-weight: 500; }
+        .input-group input { width: 100%; padding: 14px 16px; border: 1px solid #d1d5db; border-radius: 12px; font-size: 16px; outline: none; background: #f9fafb; transition: 0.2s; }
+        .input-group input:focus { border-color: #2563eb; background: #fff; }
+        .btn { background: #2563eb; color: #fff; border: none; padding: 16px; border-radius: 12px; font-size: 16px; font-weight: 500; cursor: pointer; text-align: center; transition: 0.2s; width: 100%; }
+        .btn:hover { background: #1d4ed8; }
+        .btn:active { transform: scale(0.98); }
+        .btn:disabled { background: #9ca3af; cursor: not-allowed; }
+        
+        /* Main */
+        #main { display: none; flex-direction: column; height: 100%; }
+        .header { padding: 20px 20px 16px; border-bottom: 1px solid #f3f4f6; background: #fff; z-index: 10; }
+        .header h2 { text-align: center; margin-bottom: 16px; font-size: 20px; color: #111827; }
+        .search-wrapper { position: relative; }
+        .search-box { width: 100%; padding: 12px 16px 12px 40px; border: 1px solid #d1d5db; border-radius: 12px; font-size: 15px; outline: none; background: #f9fafb; transition: 0.2s; }
+        .search-box:focus { border-color: #2563eb; background: #fff; }
+        .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #9ca3af; font-size: 18px; }
+        
+        .list-container { flex: 1; overflow-y: auto; padding: 16px; background: #f3f4f6; position: relative; }
+        .invoice-card { background: #fff; padding: 16px; border-radius: 16px; margin-bottom: 12px; display: flex; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.02); gap: 14px; border: 1px solid transparent; transition: 0.2s; cursor: pointer; }
+        .invoice-card.selected { border-color: #2563eb; background: #eff6ff; }
+        .invoice-card input[type="checkbox"] { width: 22px; height: 22px; accent-color: #2563eb; border-radius: 6px; pointer-events: none; }
+        .invoice-info { flex: 1; overflow: hidden; }
+        .invoice-name { font-size: 15px; font-weight: 500; color: #111827; word-break: break-word; margin-bottom: 6px; line-height: 1.4; }
+        .invoice-date { font-size: 13px; color: #6b7280; }
+        .preview-icon { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; background: #f3f4f6; border-radius: 10px; color: #4b5563; text-decoration: none; font-size: 20px; flex-shrink: 0; transition: 0.2s; }
+        .preview-icon:hover { background: #e5e7eb; color: #111827; }
+        
+        .pagination { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: #fff; border-top: 1px solid #f3f4f6; }
+        .page-btn { padding: 8px 16px; border: 1px solid #d1d5db; background: #fff; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; color: #374151; }
+        .page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .page-info { font-size: 14px; font-weight: 500; color: #4b5563; }
+        
+        .actions { display: flex; gap: 12px; padding: 16px; background: #fff; border-top: 1px solid #f3f4f6; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+        .actions .btn { flex: 1; padding: 14px; font-size: 15px; display: flex; justify-content: center; align-items: center; gap: 8px; }
+        .btn-outline { background: #fff; color: #2563eb; border: 1px solid #2563eb; }
+        .btn-outline:hover:not(:disabled) { background: #eff6ff; }
+        .btn-outline:disabled { background: #fff; color: #9ca3af; border-color: #d1d5db; }
+        
+        .loading { text-align: center; padding: 30px 20px; display: none; }
+        .spinner { border: 3px solid #f3f4f6; border-top: 3px solid #2563eb; border-radius: 50%; width: 28px; height: 28px; animation: spin 1s linear infinite; margin: 0 auto 12px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .loading-text { color: #6b7280; font-size: 14px; }
+        
+        .error-msg { color: #ef4444; text-align: center; padding: 20px; display: none; font-size: 14px; background: #fef2f2; border-radius: 12px; margin: 16px; }
+        .empty-msg { text-align: center; padding: 40px 20px; color: #6b7280; display: none; font-size: 15px; }
+        
+        #overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,0.9); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 100; }
+        #overlay .spinner { width: 40px; height: 40px; border-width: 4px; }
+        #overlay-text { margin-top: 16px; font-size: 15px; color: #111827; font-weight: 500; }
+
+        /* PDF Modal */
+        #pdf-modal { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: #000; display: none; flex-direction: column; z-index: 200; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: #1f2937; color: #fff; }
+        .modal-title { font-size: 15px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%; }
+        .modal-controls { display: flex; gap: 12px; }
+        .modal-btn { background: none; border: none; color: #fff; font-size: 20px; cursor: pointer; padding: 4px; display: flex; align-items: center; justify-content: center; }
+        .modal-body { flex: 1; overflow: auto; display: flex; justify-content: center; align-items: flex-start; background: #374151; position: relative; }
+        #pdf-render-area { transform-origin: top center; transition: transform 0.2s ease-out; }
+        #pdf-canvas { display: block; max-width: 100%; height: auto; box-shadow: 0 4px 6px rgba(0,0,0,0.3); margin: 16px auto; }
+        #pdf-loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #fff; display: none; flex-direction: column; align-items: center; }
+        #pdf-loading .spinner { border-color: #4b5563; border-top-color: #3b82f6; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- Login Screen -->
+        <div id="login">
+            <h2>Đăng nhập</h2>
+            <div class="input-group">
+                <label>Email</label>
+                <input type="email" placeholder="Nhập email" value="admin@example.com">
+            </div>
+            <div class="input-group">
+                <label>Mật khẩu</label>
+                <input type="password" placeholder="Nhập mật khẩu" value="123456">
+            </div>
+            <button class="btn" id="login-btn">Đăng nhập</button>
+        </div>
+
+        <!-- Main Screen -->
+        <div id="main">
+            <div class="header">
+                <h2>Quản lý hóa đơn</h2>
+                <div class="search-wrapper">
+                    <span class="search-icon">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    </span>
+                    <input type="text" id="search-input" class="search-box" placeholder="Tìm tên hóa đơn...">
+                </div>
+            </div>
+            
+            <div class="list-container" id="list-container">
+                <div id="loading" class="loading">
+                    <div class="spinner"></div>
+                    <div class="loading-text">Đang tải dữ liệu...</div>
+                </div>
+                <div id="error-msg" class="error-msg"></div>
+                <div id="empty-msg" class="empty-msg">Không có hóa đơn nào.</div>
+                <div id="invoice-list"></div>
+            </div>
+            
+            <div class="pagination" id="pagination" style="display: none;">
+                <button class="page-btn" id="prev-btn">Trang trước</button>
+                <span class="page-info" id="page-info">1 / 1</span>
+                <button class="page-btn" id="next-btn">Trang sau</button>
+            </div>
+            
+            <div class="actions">
+                <button class="btn btn-outline" id="download-btn" disabled>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    Tải về
+                </button>
+                <button class="btn" id="share-btn" disabled>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+                    Chia sẻ
+                </button>
+            </div>
+        </div>
+        
+        <!-- Overlay -->
+        <div id="overlay">
+            <div class="spinner"></div>
+            <div id="overlay-text">Đang xử lý...</div>
+        </div>
+
+        <!-- PDF Modal -->
+        <div id="pdf-modal">
+            <div class="modal-header">
+                <div class="modal-title" id="modal-title">Hóa đơn</div>
+                <div class="modal-controls">
+                    <button class="modal-btn" id="zoom-out-btn">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+                    </button>
+                    <button class="modal-btn" id="zoom-in-btn">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+                    </button>
+                    <button class="modal-btn" id="close-modal-btn">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    </button>
+                </div>
+            </div>
+            <div class="modal-body" id="modal-body">
+                <div id="pdf-loading">
+                    <div class="spinner"></div>
+                    <div style="margin-top: 10px; font-size: 14px;">Đang tải PDF...</div>
+                </div>
+                <div id="pdf-render-area">
+                    <canvas id="pdf-canvas"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            const API_KEY = 'AIzaSyA7qrMyMkywuN1IupOH7bh1EJyJDzwUg_k';
+            const FOLDER_ID = '1-64KL_63dheL5K-LHPwQviL9Ez6Gky8v';
+            const API_URL = `https://www.googleapis.com/drive/v3/files?q='${FOLDER_ID}'+in+parents+and+mimeType='application/pdf'&fields=files(id,name,createdTime,mimeType)&key=${API_KEY}`;
+
+            let allFiles = [];
+            let filteredFiles = [];
+            let selectedFiles = new Set();
+            let currentPage = 1;
+            const itemsPerPage = 20;
+
+            const loginScreen = document.getElementById('login');
+            const mainScreen = document.getElementById('main');
+            const loginBtn = document.getElementById('login-btn');
+            const searchInput = document.getElementById('search-input');
+            const listContainer = document.getElementById('list-container');
+            const invoiceList = document.getElementById('invoice-list');
+            const loading = document.getElementById('loading');
+            const errorMsg = document.getElementById('error-msg');
+            const emptyMsg = document.getElementById('empty-msg');
+            const pagination = document.getElementById('pagination');
+            const prevBtn = document.getElementById('prev-btn');
+            const nextBtn = document.getElementById('next-btn');
+            const pageInfo = document.getElementById('page-info');
+            const downloadBtn = document.getElementById('download-btn');
+            const shareBtn = document.getElementById('share-btn');
+            const overlay = document.getElementById('overlay');
+            const overlayText = document.getElementById('overlay-text');
+
+            // Modal Elements
+            const pdfModal = document.getElementById('pdf-modal');
+            const modalTitle = document.getElementById('modal-title');
+            const closeModalBtn = document.getElementById('close-modal-btn');
+            const zoomInBtn = document.getElementById('zoom-in-btn');
+            const zoomOutBtn = document.getElementById('zoom-out-btn');
+            const pdfCanvas = document.getElementById('pdf-canvas');
+            const pdfRenderArea = document.getElementById('pdf-render-area');
+            const pdfLoading = document.getElementById('pdf-loading');
+            const modalBody = document.getElementById('modal-body');
+
+            let currentPdfDoc = null;
+            let currentZoom = 1.0;
+            let currentPdfUrl = null;
+
+            loginBtn.addEventListener('click', () => {
+                loginScreen.style.display = 'none';
+                mainScreen.style.display = 'flex';
+                loadData();
+            });
+
+            async function loadData() {
+                loading.style.display = 'block';
+                errorMsg.style.display = 'none';
+                emptyMsg.style.display = 'none';
+                invoiceList.innerHTML = '';
+                pagination.style.display = 'none';
+                
+                try {
+                    const response = await fetch(API_URL);
+                    if (!response.ok) {
+                        if (response.status === 401 || response.status === 403) {
+                            throw new Error('Lỗi xác thực hoặc không có quyền truy cập (401/403). Kiểm tra lại API Key.');
+                        }
+                        throw new Error('Đã xảy ra lỗi khi tải dữ liệu từ Google Drive.');
+                    }
+                    const data = await response.json();
+                    allFiles = data.files || [];
+                    
+                    if (allFiles.length === 0) {
+                        emptyMsg.style.display = 'block';
+                    } else {
+                        filteredFiles = [...allFiles];
+                        pagination.style.display = 'flex';
+                        renderList();
+                    }
+                } catch (err) {
+                    errorMsg.textContent = err.message;
+                    errorMsg.style.display = 'block';
+                } finally {
+                    loading.style.display = 'none';
+                }
+            }
+
+            function renderList() {
+                invoiceList.innerHTML = '';
+                const totalPages = Math.ceil(filteredFiles.length / itemsPerPage) || 1;
+                if (currentPage > totalPages) currentPage = totalPages;
+                
+                pageInfo.textContent = `${currentPage} / ${totalPages}`;
+                prevBtn.disabled = currentPage === 1;
+                nextBtn.disabled = currentPage === totalPages;
+                
+                const start = (currentPage - 1) * itemsPerPage;
+                const end = start + itemsPerPage;
+                const pageFiles = filteredFiles.slice(start, end);
+                
+                if (pageFiles.length === 0 && filteredFiles.length === 0) {
+                    emptyMsg.style.display = 'block';
+                    pagination.style.display = 'none';
+                } else {
+                    emptyMsg.style.display = 'none';
+                    pagination.style.display = 'flex';
+                }
+
+                pageFiles.forEach(file => {
+                    const date = new Date(file.createdTime);
+                    const dateStr = `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth()+1).toString().padStart(2, '0')}/${date.getFullYear()}`;
+                    
+                    const card = document.createElement('div');
+                    card.className = `invoice-card ${selectedFiles.has(file.id) ? 'selected' : ''}`;
+                    
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.checked = selectedFiles.has(file.id);
+                    
+                    const info = document.createElement('div');
+                    info.className = 'invoice-info';
+                    info.innerHTML = `<div class="invoice-name">${file.name}</div><div class="invoice-date">${dateStr}</div>`;
+                    
+                    const preview = document.createElement('button');
+                    preview.className = 'preview-icon';
+                    preview.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+                    preview.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        openPreview(file.id, file.name);
+                    });
+                    
+                    card.appendChild(checkbox);
+                    card.appendChild(info);
+                    card.appendChild(preview);
+                    
+                    card.addEventListener('click', () => {
+                        if (selectedFiles.has(file.id)) {
+                            selectedFiles.delete(file.id);
+                            checkbox.checked = false;
+                            card.classList.remove('selected');
+                        } else {
+                            selectedFiles.add(file.id);
+                            checkbox.checked = true;
+                            card.classList.add('selected');
+                        }
+                        updateActionButtons();
+                    });
+                    
+                    invoiceList.appendChild(card);
+                });
+                updateActionButtons();
+            }
+
+            searchInput.addEventListener('input', (e) => {
+                const term = e.target.value.toLowerCase();
+                filteredFiles = allFiles.filter(f => f.name.toLowerCase().includes(term));
+                currentPage = 1;
+                renderList();
+            });
+
+            prevBtn.addEventListener('click', () => {
+                if (currentPage > 1) {
+                    currentPage--;
+                    renderList();
+                    listContainer.scrollTop = 0;
+                }
+            });
+
+            nextBtn.addEventListener('click', () => {
+                const totalPages = Math.ceil(filteredFiles.length / itemsPerPage);
+                if (currentPage < totalPages) {
+                    currentPage++;
+                    renderList();
+                    listContainer.scrollTop = 0;
+                }
+            });
+
+            function updateActionButtons() {
+                const hasSelection = selectedFiles.size > 0;
+                downloadBtn.disabled = !hasSelection;
+                shareBtn.disabled = !hasSelection;
+            }
+
+            downloadBtn.addEventListener('click', () => {
+                if (selectedFiles.size === 0) return;
+                selectedFiles.forEach(id => {
+                    const url = `https://drive.google.com/uc?export=download&id=${id}`;
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.target = '_blank';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                });
+                resetSelection();
+            });
+
+            // --- PREVIEW LOGIC ---
+            async function openPreview(id, name) {
+                pdfModal.style.display = 'flex';
+                modalTitle.textContent = name;
+                pdfLoading.style.display = 'flex';
+                pdfRenderArea.style.display = 'none';
+                currentZoom = 1.0;
+                applyZoom();
+                
+                try {
+                    const url = `https://drive.google.com/uc?export=download&id=${id}`;
+                    const res = await fetch(url);
+                    if (!res.ok) throw new Error('Failed to fetch PDF');
+                    const blob = await res.blob();
+                    currentPdfUrl = URL.createObjectURL(blob);
+                    
+                    const loadingTask = pdfjsLib.getDocument(currentPdfUrl);
+                    currentPdfDoc = await loadingTask.promise;
+                    
+                    await renderPage(1);
+                    
+                    pdfLoading.style.display = 'none';
+                    pdfRenderArea.style.display = 'block';
+                } catch (err) {
+                    console.error('Preview error:', err);
+                    alert('Không thể tải bản xem trước. Vui lòng thử lại sau.');
+                    closePreview();
+                }
+            }
+
+            async function renderPage(num) {
+                if (!currentPdfDoc) return;
+                const page = await currentPdfDoc.getPage(num);
+                
+                // Calculate scale to fit width initially
+                const viewport = page.getViewport({ scale: 1 });
+                const containerWidth = modalBody.clientWidth - 32; // 16px padding each side
+                const scale = containerWidth / viewport.width;
+                const scaledViewport = page.getViewport({ scale: scale });
+
+                const ctx = pdfCanvas.getContext('2d');
+                pdfCanvas.height = scaledViewport.height;
+                pdfCanvas.width = scaledViewport.width;
+
+                const renderContext = {
+                    canvasContext: ctx,
+                    viewport: scaledViewport
+                };
+                await page.render(renderContext).promise;
+            }
+
+            function applyZoom() {
+                pdfRenderArea.style.transform = `scale(${currentZoom})`;
+            }
+
+            zoomInBtn.addEventListener('click', () => {
+                if (currentZoom < 3.0) {
+                    currentZoom += 0.25;
+                    applyZoom();
+                }
+            });
+
+            zoomOutBtn.addEventListener('click', () => {
+                if (currentZoom > 0.5) {
+                    currentZoom -= 0.25;
+                    applyZoom();
+                }
+            });
+
+            function closePreview() {
+                pdfModal.style.display = 'none';
+                const ctx = pdfCanvas.getContext('2d');
+                ctx.clearRect(0, 0, pdfCanvas.width, pdfCanvas.height);
+                if (currentPdfUrl) {
+                    URL.revokeObjectURL(currentPdfUrl);
+                    currentPdfUrl = null;
+                }
+                currentPdfDoc = null;
+            }
+
+            closeModalBtn.addEventListener('click', closePreview);
+
+            // Pinch zoom logic for mobile
+            let initialDistance = null;
+            let initialZoom = 1;
+
+            modalBody.addEventListener('touchstart', (e) => {
+                if (e.touches.length === 2) {
+                    e.preventDefault();
+                    initialDistance = Math.hypot(
+                        e.touches[0].pageX - e.touches[1].pageX,
+                        e.touches[0].pageY - e.touches[1].pageY
+                    );
+                    initialZoom = currentZoom;
+                }
+            }, { passive: false });
+
+            modalBody.addEventListener('touchmove', (e) => {
+                if (e.touches.length === 2 && initialDistance) {
+                    e.preventDefault();
+                    const currentDistance = Math.hypot(
+                        e.touches[0].pageX - e.touches[1].pageX,
+                        e.touches[0].pageY - e.touches[1].pageY
+                    );
+                    const scale = currentDistance / initialDistance;
+                    let newZoom = initialZoom * scale;
+                    
+                    // Constrain zoom
+                    newZoom = Math.max(0.5, Math.min(newZoom, 3.0));
+                    currentZoom = newZoom;
+                    applyZoom();
+                }
+            }, { passive: false });
+
+            modalBody.addEventListener('touchend', () => {
+                initialDistance = null;
+            });
+
+            // --- SHARE LOGIC ---
+            shareBtn.addEventListener('click', async () => {
+                if (selectedFiles.size === 0) return;
+                
+                if (selectedFiles.size > 5) {
+                    alert('Chỉ được chọn tối đa 5 file để chia sẻ cùng lúc.');
+                    return;
+                }
+                
+                const isMultiple = selectedFiles.size > 1;
+                showOverlay(isMultiple ? 'Đang gộp file...' : 'Đang chuẩn bị file...');
+                
+                let fileToShare = null;
+                try {
+                    if (isMultiple) {
+                        const { PDFDocument } = window.PDFLib;
+                        const mergedPdf = await PDFDocument.create();
+                        
+                        for (const id of selectedFiles) {
+                            const fileObj = allFiles.find(f => f.id === id);
+                            if (!fileObj) continue;
+                            
+                            console.log(`Fetching file: ${fileObj.name}`);
+                            const url = `https://drive.google.com/uc?export=download&id=${id}`;
+                            const res = await fetch(url);
+                            if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+                            const arrayBuffer = await res.arrayBuffer();
+                            
+                            const pdfDoc = await PDFDocument.load(arrayBuffer);
+                            const copiedPages = await mergedPdf.copyPages(pdfDoc, pdfDoc.getPageIndices());
+                            copiedPages.forEach((page) => mergedPdf.addPage(page));
+                        }
+                        
+                        const mergedPdfBytes = await mergedPdf.save();
+                        fileToShare = new File([mergedPdfBytes], 'hoadon-tong-hop.pdf', { 
+                            type: 'application/pdf',
+                            lastModified: Date.now()
+                        });
+                    } else {
+                        const id = Array.from(selectedFiles)[0];
+                        const fileObj = allFiles.find(f => f.id === id);
+                        if (!fileObj) throw new Error('File not found');
+                        
+                        console.log(`Fetching file: ${fileObj.name}`);
+                        const url = `https://drive.google.com/uc?export=download&id=${id}`;
+                        const res = await fetch(url);
+                        if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+                        const blob = await res.blob();
+                        
+                        fileToShare = new File([blob], fileObj.name, { 
+                            type: 'application/pdf',
+                            lastModified: Date.now()
+                        });
+                    }
+
+                    const shareData = { files: [fileToShare] };
+                    
+                    if (!navigator.share || (navigator.canShare && !navigator.canShare(shareData))) {
+                        console.log('Web Share API not supported or cannot share files, fallback to download');
+                        downloadSingleFile(fileToShare);
+                        return;
+                    }
+
+                    console.log('Ready to share file:', fileToShare.name);
+                    await new Promise(resolve => setTimeout(resolve, 150));
+                    
+                    await navigator.share(shareData);
+                    console.log('Share successful');
+                } catch (err) {
+                    console.error('Share error:', err);
+                    if (err.name !== 'AbortError') {
+                        console.log('Fallback to download due to error');
+                        if (fileToShare) {
+                            downloadSingleFile(fileToShare);
+                        } else {
+                            downloadBtn.click();
+                        }
+                    }
+                } finally {
+                    hideOverlay();
+                    resetSelection();
+                }
+            });
+
+            function downloadSingleFile(file) {
+                const url = URL.createObjectURL(file);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = file.name;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+
+            function resetSelection() {
+                selectedFiles.clear();
+                renderList();
+            }
+
+            function showOverlay(text) {
+                overlayText.textContent = text;
+                overlay.style.display = 'flex';
+            }
+
+            function hideOverlay() {
+                overlay.style.display = 'none';
+            }
+        })();
+    </script>
+</body>
+</html>
