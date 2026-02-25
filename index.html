@@ -335,7 +335,7 @@
                 let fileToShare = null;
                 try {
                     if (isMultiple) {
-                        const { PDFDocument } = PDFLib;
+                        const { PDFDocument } = window.PDFLib;
                         const mergedPdf = await PDFDocument.create();
                         
                         for (const id of selectedFiles) {
@@ -354,8 +354,10 @@
                         }
                         
                         const mergedPdfBytes = await mergedPdf.save();
-                        const blob = new Blob([mergedPdfBytes], { type: 'application/pdf' });
-                        fileToShare = new File([blob], 'hoadon-tong-hop.pdf', { type: 'application/pdf' });
+                        fileToShare = new File([mergedPdfBytes], 'hoadon-tong-hop.pdf', { 
+                            type: 'application/pdf',
+                            lastModified: Date.now()
+                        });
                     } else {
                         const id = Array.from(selectedFiles)[0];
                         const fileObj = allFiles.find(f => f.id === id);
@@ -366,20 +368,26 @@
                         const res = await fetch(url);
                         if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
                         const blob = await res.blob();
-                        fileToShare = new File([blob], fileObj.name, { type: 'application/pdf' });
+                        
+                        fileToShare = new File([blob], fileObj.name, { 
+                            type: 'application/pdf',
+                            lastModified: Date.now()
+                        });
                     }
 
-                    const canShareFiles = navigator.canShare && navigator.canShare({ files: [fileToShare] });
-                    if (!navigator.share || !canShareFiles) {
+                    const shareData = { files: [fileToShare] };
+                    
+                    if (!navigator.share || (navigator.canShare && !navigator.canShare(shareData))) {
                         console.log('Web Share API not supported or cannot share files, fallback to download');
                         downloadSingleFile(fileToShare);
                         return;
                     }
 
                     console.log('Ready to share file:', fileToShare.name);
-                    await navigator.share({
-                        files: [fileToShare]
-                    });
+                    // Delay nhỏ giúp Android Chrome chuẩn bị file trong bộ nhớ trước khi gọi Share UI
+                    await new Promise(resolve => setTimeout(resolve, 150));
+                    
+                    await navigator.share(shareData);
                     console.log('Share successful');
                 } catch (err) {
                     console.error('Share error:', err);
